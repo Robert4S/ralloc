@@ -3,20 +3,27 @@ use std::{alloc::GlobalAlloc, mem, ptr};
 use libc::{mmap, sysconf, MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_READ, PROT_WRITE, _SC_PAGESIZE};
 use parking_lot::Mutex;
 
-pub struct Allocator {
+/// Custom global allocator implemented using a free list.
+/// # Usage
+/// ```rust
+/// #[global_allocator]
+/// static GLOBAL: RAllocator = RAllocator::new();
+/// // This will make you program use the RAllocator allocator for all heap allocations
+/// ```
+pub struct RAllocator {
     inner: Mutex<AllocatorInner>,
 }
 
-unsafe impl Send for Allocator {}
-unsafe impl Sync for Allocator {}
+unsafe impl Send for RAllocator {}
+unsafe impl Sync for RAllocator {}
 
-impl Default for Allocator {
+impl Default for RAllocator {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Allocator {
+impl RAllocator {
     pub const fn new() -> Self {
         Self {
             inner: Mutex::new(AllocatorInner {
@@ -46,7 +53,7 @@ impl Allocator {
     }
 }
 
-unsafe impl GlobalAlloc for Allocator {
+unsafe impl GlobalAlloc for RAllocator {
     unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
         self.r_alloc(layout.pad_to_align().size(), layout.align())
     }
@@ -83,14 +90,6 @@ unsafe fn mmap_chunk(size: usize) -> *mut u8 {
 }
 
 impl AllocatorInner {
-    pub unsafe fn for_each(&self, f: impl Fn(Chunk)) {
-        let mut curr = self.free;
-        while !curr.is_null() {
-            f(curr.read());
-            curr = curr.read().next;
-        }
-    }
-
     pub unsafe fn new(size: usize) -> Self {
         let chunk = mmap_chunk(size) as *mut Chunk;
 

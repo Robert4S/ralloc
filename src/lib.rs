@@ -1,8 +1,9 @@
 mod ralloc;
-pub use ralloc::*;
+pub use ralloc::RAllocator;
 
+#[cfg(test)]
 #[global_allocator]
-static GLOBAL: Allocator = Allocator::new();
+static GLOBAL: RAllocator = RAllocator::new();
 
 #[cfg(test)]
 mod tests {
