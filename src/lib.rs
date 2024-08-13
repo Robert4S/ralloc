@@ -4,6 +4,7 @@ pub mod ralloc;
 /// # Usage
 /// ```rust
 /// use ralloc::RAllocator;
+///
 /// #[global_allocator]
 /// static GLOBAL: RAllocator = RAllocator::new();
 /// // This will make you program use the RAllocatorInternal allocator for all heap allocations
