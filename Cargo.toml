@@ -1,5 +1,5 @@
 [package]
-name = "ralloc"
+name = "rlalloc"
 version = "0.1.0"
 edition = "2021"
 description = "blazingly slow malloc replacement"

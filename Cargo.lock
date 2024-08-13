@@ -66,21 +66,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "ralloc"
-version = "0.1.0"
-dependencies = [
- "itoa",
- "libc",
- "parking_lot",
-]
-
-[[package]]
 name = "redox_syscall"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a908a6e00f1fdd0dfd9c0eb08ce85126f6d8bbda50017e74bc4a4b7d4a926a4"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "rlalloc"
+version = "0.1.0"
+dependencies = [
+ "itoa",
+ "libc",
+ "parking_lot",
 ]
 
 [[package]]
