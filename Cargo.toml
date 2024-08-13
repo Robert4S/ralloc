@@ -2,6 +2,8 @@
 name = "ralloc"
 version = "0.1.0"
 edition = "2021"
+description = "blazingly slow malloc replacement"
+license = "MIT"
 
 [dependencies]
 itoa = "1.0.11"
