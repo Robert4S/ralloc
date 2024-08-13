@@ -1,4 +1,4 @@
-use std::{alloc::GlobalAlloc, mem, ptr};
+use std::{alloc::GlobalAlloc, cell::UnsafeCell, mem, ptr};
 
 use libc::{mmap, sysconf, MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_READ, PROT_WRITE, _SC_PAGESIZE};
 use parking_lot::Mutex;
@@ -67,9 +67,7 @@ pub struct AllocatorInner {
 }
 
 impl Drop for AllocatorInner {
-    fn drop(&mut self) {
-        
-    }
+    fn drop(&mut self) {}
 }
 
 #[allow(unused)]
@@ -108,6 +106,9 @@ impl AllocatorInner {
         Self { free: chunk }
     }
 
+    /// Allocate some memory
+    /// # Safety
+    /// No
     pub unsafe fn alloc(&mut self, size: usize, align: usize) -> *mut u8 {
         let align = align.max(mem::align_of::<Chunk>());
         let mut size = size;
@@ -183,6 +184,9 @@ impl AllocatorInner {
         }
     }
 
+    /// Deallocate some memory
+    /// # Safety
+    /// No
     pub unsafe fn free(&mut self, ptr: *mut u8) {
         let chunk_ptr = (ptr as *mut Chunk).sub(1);
         chunk_ptr.write(Chunk {
