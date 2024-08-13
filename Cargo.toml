@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "blazingly slow malloc replacement"
 license = "MIT"
-owner = "Robert4S"
+repository = "https://github.com/Robert4S/ralloc/"
 
 [dependencies]
 itoa = "1.0.11"
