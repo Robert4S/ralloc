@@ -1,0 +1,15 @@
+[package]
+name = "ralloc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+atoi = "2.0.0"
+itoa = "1.0.11"
+libc = "0.2.155"
+once_cell = "1.19.0"
+parking_lot = "0.12.3"
+rand = "0.8.5"
+
+#[profile.dev]
+#panic = "abort"
