@@ -1,4 +1,4 @@
-use std::{alloc::GlobalAlloc, cell::UnsafeCell, mem, ptr};
+use std::{alloc::GlobalAlloc, mem, ptr};
 
 use libc::{mmap, sysconf, MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_READ, PROT_WRITE, _SC_PAGESIZE};
 use parking_lot::Mutex;
@@ -70,14 +70,16 @@ impl Drop for AllocatorInner {
     fn drop(&mut self) {}
 }
 
-#[allow(unused)]
-fn print_int(n: usize) {
-    let mut buf = itoa::Buffer::new();
-    let s = buf.format(n);
-    unsafe {
-        libc::write(1, s.as_ptr() as *const _, s.len());
-        libc::write(1, "\n".as_ptr() as *const _, 1);
-    }
+#[inline]
+unsafe fn mmap_chunk(size: usize) -> *mut u8 {
+    let addr = std::ptr::null_mut::<libc::c_void>();
+    let len = size;
+    let prot = PROT_READ | PROT_WRITE;
+    let flags = MAP_ANON | MAP_PRIVATE;
+    let fd = -1;
+    let offset = 0;
+
+    mmap(addr, len, prot, flags, fd, offset) as *mut u8
 }
 
 impl AllocatorInner {
@@ -90,14 +92,7 @@ impl AllocatorInner {
     }
 
     pub unsafe fn new(size: usize) -> Self {
-        let addr = std::ptr::null_mut::<libc::c_void>();
-        let len = size;
-        let prot = PROT_READ | PROT_WRITE;
-        let flags = MAP_ANON | MAP_PRIVATE;
-        let fd = -1;
-        let offset = 0;
-
-        let chunk = mmap(addr, len, prot, flags, fd, offset) as *mut Chunk;
+        let chunk = mmap_chunk(size) as *mut Chunk;
 
         chunk.write(Chunk {
             size,
@@ -119,7 +114,7 @@ impl AllocatorInner {
         let mut prev: *mut Chunk = ptr::null_mut();
         let page_size = sysconf(_SC_PAGESIZE) as usize;
 
-        'mainloop: while !curr.is_null() {
+        while !curr.is_null() {
             if curr.read().size >= (size + mem::size_of::<Chunk>()) {
                 let mut tmp = curr.add(1) as usize;
                 while (tmp % align) != 0 {
@@ -131,7 +126,7 @@ impl AllocatorInner {
                     (new_curr as *mut u8).add(size + mem::size_of::<Chunk>()) as *mut Chunk;
 
                 if (new_free as usize / page_size) != (curr as usize / page_size) {
-                    break 'mainloop;
+                    break;
                 }
 
                 let new_size = curr.read().size - size - mem::size_of::<Chunk>();
@@ -157,14 +152,8 @@ impl AllocatorInner {
             prev = curr;
             curr = curr.as_ref().unwrap().next;
         }
-        let addr = std::ptr::null_mut::<libc::c_void>();
-        let len = size;
-        let prot = PROT_READ | PROT_WRITE;
-        let flags = MAP_ANON | MAP_PRIVATE;
-        let fd = -1;
-        let offset = 0;
 
-        let chunk = mmap(addr, len, prot, flags, fd, offset) as *mut Chunk;
+        let chunk = mmap_chunk(size) as *mut Chunk;
 
         if chunk == MAP_FAILED as *mut Chunk {
             ptr::null_mut()
@@ -186,7 +175,7 @@ impl AllocatorInner {
 
     /// Deallocate some memory
     /// # Safety
-    /// No
+    /// No. No desegmentation. after a few allocs i hand you over to mmap
     pub unsafe fn free(&mut self, ptr: *mut u8) {
         let chunk_ptr = (ptr as *mut Chunk).sub(1);
         chunk_ptr.write(Chunk {
