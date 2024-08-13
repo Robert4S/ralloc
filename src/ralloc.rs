@@ -3,27 +3,20 @@ use std::{alloc::GlobalAlloc, mem, ptr};
 use libc::{mmap, sysconf, MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_READ, PROT_WRITE, _SC_PAGESIZE};
 use parking_lot::Mutex;
 
-/// Custom global allocator implemented using a free list.
-/// # Usage
-/// ```rust
-/// #[global_allocator]
-/// static GLOBAL: RAllocator = RAllocator::new();
-/// // This will make you program use the RAllocator allocator for all heap allocations
-/// ```
-pub struct RAllocator {
+pub struct RAllocatorInternal {
     inner: Mutex<AllocatorInner>,
 }
 
-unsafe impl Send for RAllocator {}
-unsafe impl Sync for RAllocator {}
+unsafe impl Send for RAllocatorInternal {}
+unsafe impl Sync for RAllocatorInternal {}
 
-impl Default for RAllocator {
+impl Default for RAllocatorInternal {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RAllocator {
+impl RAllocatorInternal {
     pub const fn new() -> Self {
         Self {
             inner: Mutex::new(AllocatorInner {
@@ -36,7 +29,7 @@ impl RAllocator {
         loop {
             if let Some(mut inner) = self.inner.try_lock() {
                 if inner.free.is_null() {
-                    *inner = AllocatorInner::new(12228);
+                    *inner = AllocatorInner::new(4096);
                 }
                 return inner.alloc(size, align);
             }
@@ -53,7 +46,7 @@ impl RAllocator {
     }
 }
 
-unsafe impl GlobalAlloc for RAllocator {
+unsafe impl GlobalAlloc for RAllocatorInternal {
     unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
         self.r_alloc(layout.pad_to_align().size(), layout.align())
     }

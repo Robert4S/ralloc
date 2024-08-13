@@ -1,12 +1,22 @@
-mod ralloc;
-pub use ralloc::RAllocator;
+pub mod ralloc;
 
-#[cfg(test)]
-#[global_allocator]
-static GLOBAL: RAllocator = RAllocator::new();
+/// Custom global allocator implemented using a free list.
+/// # Usage
+/// ```rust
+/// use ralloc::RAllocator;
+/// #[global_allocator]
+/// static GLOBAL: RAllocator = RAllocator::new();
+/// // This will make you program use the RAllocatorInternal allocator for all heap allocations
+/// ```
+pub type RAllocator = ralloc::RAllocatorInternal;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[global_allocator]
+    static GLOBAL: RAllocator = RAllocator::new();
+
     use std::thread;
 
     #[test]
