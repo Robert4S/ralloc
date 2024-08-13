@@ -10,6 +10,12 @@ pub struct Allocator {
 unsafe impl Send for Allocator {}
 unsafe impl Sync for Allocator {}
 
+impl Default for Allocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Allocator {
     pub const fn new() -> Self {
         Self {
@@ -62,7 +68,7 @@ pub struct AllocatorInner {
 
 impl Drop for AllocatorInner {
     fn drop(&mut self) {
-        ()
+        
     }
 }
 
@@ -86,7 +92,7 @@ impl AllocatorInner {
     }
 
     pub unsafe fn new(size: usize) -> Self {
-        let addr = 0 as *mut libc::c_void;
+        let addr = std::ptr::null_mut::<libc::c_void>();
         let len = size;
         let prot = PROT_READ | PROT_WRITE;
         let flags = MAP_ANON | MAP_PRIVATE;
@@ -150,7 +156,7 @@ impl AllocatorInner {
             prev = curr;
             curr = curr.as_ref().unwrap().next;
         }
-        let addr = 0 as *mut libc::c_void;
+        let addr = std::ptr::null_mut::<libc::c_void>();
         let len = size;
         let prot = PROT_READ | PROT_WRITE;
         let flags = MAP_ANON | MAP_PRIVATE;
