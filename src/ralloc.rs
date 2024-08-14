@@ -82,6 +82,27 @@ unsafe fn mmap_chunk(size: usize) -> *mut u8 {
     mmap(addr, len, prot, flags, fd, offset) as *mut u8
 }
 
+unsafe fn alloc_chunk_ptr(size: usize, align: usize) -> *mut u8 {
+    let c = mmap_chunk(size) as *mut Chunk;
+
+    if c == MAP_FAILED as *mut Chunk {
+        ptr::null_mut()
+    } else {
+        let mut tmp = c.add(1) as usize;
+        while (tmp % align) != 0 {
+            tmp += 1;
+        }
+        let new_chunk = tmp as *mut Chunk;
+
+        new_chunk.sub(1).write(Chunk {
+            size,
+            next: ptr::null_mut(),
+        });
+
+        new_chunk as *mut u8
+    }
+}
+
 impl AllocatorInner {
     pub unsafe fn new(size: usize) -> Self {
         let chunk = mmap_chunk(size) as *mut Chunk;
@@ -102,9 +123,14 @@ impl AllocatorInner {
         while (size % mem::align_of::<Chunk>()) != 0 {
             size += 1;
         }
+        let page_size = sysconf(_SC_PAGESIZE) as usize;
+
+        if size >= page_size {
+            return alloc_chunk_ptr(size, align);
+        }
+
         let mut curr = self.free;
         let mut prev: *mut Chunk = ptr::null_mut();
-        let page_size = sysconf(_SC_PAGESIZE) as usize;
 
         while !curr.is_null() {
             if curr.read().size >= (size + mem::size_of::<Chunk>()) {
@@ -145,24 +171,7 @@ impl AllocatorInner {
             curr = curr.as_ref().unwrap().next;
         }
 
-        let chunk = mmap_chunk(size) as *mut Chunk;
-
-        if chunk == MAP_FAILED as *mut Chunk {
-            ptr::null_mut()
-        } else {
-            let mut tmp = chunk.add(1) as usize;
-            while (tmp % align) != 0 {
-                tmp += 1;
-            }
-            let new_chunk = tmp as *mut Chunk;
-
-            new_chunk.sub(1).write(Chunk {
-                size,
-                next: ptr::null_mut(),
-            });
-
-            new_chunk as *mut u8
-        }
+        alloc_chunk_ptr(size, align)
     }
 
     /// Deallocate some memory

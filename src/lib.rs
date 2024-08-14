@@ -3,7 +3,7 @@ pub mod ralloc;
 /// Custom global allocator implemented using a free list.
 /// # Usage
 /// ```rust
-/// use ralloc::RAllocator;
+/// use rlalloc::RAllocator;
 ///
 /// #[global_allocator]
 /// static GLOBAL: RAllocator = RAllocator::new();
