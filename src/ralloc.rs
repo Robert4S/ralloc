@@ -1,6 +1,5 @@
-use std::{alloc::GlobalAlloc, mem, ptr};
+use std::{alloc::GlobalAlloc, arch::asm, mem, ptr};
 
-use libc::{mmap, sysconf, MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_READ, PROT_WRITE, _SC_PAGESIZE};
 use parking_lot::Mutex;
 
 pub struct RAllocatorInternal {
@@ -62,6 +61,18 @@ pub struct Chunk {
     pub next: *mut Chunk,
 }
 
+impl Iterator for Chunk {
+    type Item = *mut Chunk;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next.is_null() {
+            None
+        } else {
+            Some(self.next)
+        }
+    }
+}
+
 pub struct AllocatorInner {
     free: *mut Chunk,
 }
@@ -70,16 +81,38 @@ impl Drop for AllocatorInner {
     fn drop(&mut self) {}
 }
 
+const MAP_PRIVATE: usize = 0x02;
+const MAP_ANONYMOUS: usize = 0x20;
+const PROT_READ: usize = 0x1;
+const PROT_WRITE: usize = 0x2;
+const PAGE_SIZE: usize = 4096;
+const MAP_FAILED: usize = usize::max_value();
+
 #[inline]
 unsafe fn mmap_chunk(size: usize) -> *mut u8 {
     let addr = std::ptr::null_mut::<libc::c_void>();
     let len = size;
     let prot = PROT_READ | PROT_WRITE;
-    let flags = MAP_ANON | MAP_PRIVATE;
+    let flags = MAP_ANONYMOUS | MAP_PRIVATE;
     let fd = -1;
     let offset = 0;
+    let mapped: *mut u8;
 
-    mmap(addr, len, prot, flags, fd, offset) as *mut u8
+    asm!(
+        "syscall",
+        in("rax") 9, // MMAP syscall code
+        in("rdi") addr,
+        in("rsi") len,
+        in("rdx") prot,
+        in("r10") flags,
+        in("r8") fd,
+        in("r9") offset,
+        out("rcx") _,
+        out("r11") _,
+        lateout("rax") mapped,
+    );
+
+    mapped
 }
 
 unsafe fn alloc_chunk_ptr(size: usize, align: usize) -> *mut u8 {
@@ -103,6 +136,12 @@ unsafe fn alloc_chunk_ptr(size: usize, align: usize) -> *mut u8 {
     }
 }
 
+struct AllocResult {
+    new_free: *mut Chunk,
+    new_size: usize,
+    produced: *mut Chunk,
+}
+
 impl AllocatorInner {
     pub unsafe fn new(size: usize) -> Self {
         let chunk = mmap_chunk(size) as *mut Chunk;
@@ -114,18 +153,41 @@ impl AllocatorInner {
         Self { free: chunk }
     }
 
+    unsafe fn segment_free(
+        &self,
+        curr: &*mut Chunk,
+        size: usize,
+        align: usize,
+    ) -> Result<Option<AllocResult>, ()> {
+        if curr.read().size >= (size + mem::size_of::<Chunk>()) {
+            let new_curr = (((curr.add(1) as usize) + align - 1) & !(align - 1)) as *mut Chunk;
+
+            let new_free = (new_curr as *mut u8).add(size + mem::size_of::<Chunk>()) as *mut Chunk;
+
+            if (new_free as usize / PAGE_SIZE) != (*curr as usize / PAGE_SIZE) {
+                return Err(());
+            }
+
+            let new_size = curr.read().size - size - mem::size_of::<Chunk>();
+
+            Ok(Some(AllocResult {
+                new_free,
+                new_size,
+                produced: new_curr,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Allocate some memory
     /// # Safety
     /// No
     pub unsafe fn alloc(&mut self, size: usize, align: usize) -> *mut u8 {
         let align = align.max(mem::align_of::<Chunk>());
-        let mut size = size;
-        while (size % mem::align_of::<Chunk>()) != 0 {
-            size += 1;
-        }
-        let page_size = sysconf(_SC_PAGESIZE) as usize;
+        let size = (size + mem::align_of::<Chunk>() - 1) & !(mem::align_of::<Chunk>() - 1);
 
-        if size >= page_size {
+        if size >= PAGE_SIZE {
             return alloc_chunk_ptr(size, align);
         }
 
@@ -133,42 +195,36 @@ impl AllocatorInner {
         let mut prev: *mut Chunk = ptr::null_mut();
 
         while !curr.is_null() {
-            if curr.read().size >= (size + mem::size_of::<Chunk>()) {
-                let mut tmp = curr.add(1) as usize;
-                while (tmp % align) != 0 {
-                    tmp += 1;
+            match self.segment_free(&curr, size, align) {
+                Ok(None) => {
+                    prev = curr;
+                    curr = curr.as_ref().unwrap_unchecked().next;
                 }
-                let new_curr = tmp as *mut Chunk;
-
-                let new_free =
-                    (new_curr as *mut u8).add(size + mem::size_of::<Chunk>()) as *mut Chunk;
-
-                if (new_free as usize / page_size) != (curr as usize / page_size) {
+                Err(_) => {
                     break;
                 }
+                Ok(Some(AllocResult {
+                    new_free,
+                    new_size,
+                    produced,
+                })) => {
+                    if !prev.is_null() {
+                        prev.as_mut().unwrap_unchecked().next = new_free;
+                    } else {
+                        self.free = new_free;
+                    }
+                    new_free.write(Chunk {
+                        size: new_size,
+                        next: curr.read().next,
+                    });
+                    produced.sub(1).write(Chunk {
+                        size,
+                        next: ptr::null_mut(),
+                    });
 
-                let new_size = curr.read().size - size - mem::size_of::<Chunk>();
-
-                if !prev.is_null() {
-                    prev.as_mut().unwrap().next = new_free;
-                } else {
-                    self.free = new_free;
+                    return produced as *mut u8;
                 }
-
-                new_free.write(Chunk {
-                    size: new_size,
-                    next: curr.read().next,
-                });
-
-                new_curr.sub(1).write(Chunk {
-                    size,
-                    next: ptr::null_mut(),
-                });
-
-                return new_curr as *mut u8;
             }
-            prev = curr;
-            curr = curr.as_ref().unwrap().next;
         }
 
         alloc_chunk_ptr(size, align)
@@ -184,6 +240,6 @@ impl AllocatorInner {
             ..chunk_ptr.read()
         });
 
-        self.free.as_mut().unwrap().next = chunk_ptr;
+        self.free.as_mut().unwrap_unchecked().next = chunk_ptr;
     }
 }
