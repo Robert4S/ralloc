@@ -90,7 +90,7 @@ const MAP_FAILED: usize = usize::max_value();
 
 #[inline]
 unsafe fn mmap_chunk(size: usize) -> *mut u8 {
-    let addr = std::ptr::null_mut::<libc::c_void>();
+    let addr = std::ptr::null_mut::<*mut u8>();
     let len = size;
     let prot = PROT_READ | PROT_WRITE;
     let flags = MAP_ANONYMOUS | MAP_PRIVATE;
