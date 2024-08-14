@@ -1,3 +1,4 @@
+mod chunk;
 pub mod ralloc;
 
 /// Custom global allocator implemented using a free list.
