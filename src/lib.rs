@@ -27,7 +27,10 @@ mod tests {
         for _ in 0..1_000_000 {
             v.push(Box::new(10));
         }
-        assert_eq!(*v[0], 10);
+        assert_eq!(
+            v.into_iter().map(|b| *b).collect::<Vec<_>>().as_slice(),
+            &[10; 1000000]
+        );
     }
 
     #[test]
@@ -45,7 +48,10 @@ mod tests {
                 for _ in 0..100_000 {
                     v.push(Box::new(10));
                 }
-                assert_eq!(*v[0], 10);
+                assert_eq!(
+                    v.into_iter().map(|b| *b).collect::<Vec<_>>().as_slice(),
+                    &[10; 100000]
+                );
             });
             handles.push(handle);
         }
